@@ -14,28 +14,33 @@ Service AI chatbot utilisant FastAPI et Ollama avec le modèle llama3.
 ```bash
 git clone https://github.com/yomnachelly/Fast-API-pfe.git
 cd Fast-API-pfe
-Installer les dépendances Python
+```
+2.**Installer les dépendances Python**
 
-bash
+```bash
 pip install fastapi uvicorn requests pydantic
 Lancer Ollama
 Démarrer le serveur Ollama
 bash
 ollama serve
-Le serveur sera accessible à l'adresse : http://127.0.0.1:11434/
+ ```
+=>Le serveur sera accessible à l'adresse : http://127.0.0.1:11434/
 
-Vérifier qu'Ollama fonctionne
-bash
+## Vérifier qu'Ollama fonctionne
+
+
 # Tester la connexion (dans un autre terminal)
 curl http://127.0.0.1:11434/api/generate
 Si le modèle llama3 n'est pas installé
-bash
+```bash
 ollama pull llama3:latest
+```
 Lancer le service FastAPI
 Démarrer le serveur FastAPI
-bash
+```bash
 # Dans le dossier du projet (C:/ai-service)
 uvicorn main:app --reload --port 8001
+```
 Le service sera disponible à : http://127.0.0.1:8001
 
 Vérifier que le service tourne
@@ -47,10 +52,11 @@ Utilisation de l'API
 Endpoint POST /ask
 Envoyez une question au chatbot :
 
-bash
+```bash
 curl -X POST "http://127.0.0.1:8001/ask" \
      -H "Content-Type: application/json" \
      -d '{"prompt": "Quelle est la capitale de la France ?"}'
+```
 Réponse attendue :
 
 json
@@ -58,7 +64,7 @@ json
 Endpoint GET /
 Vérifier que le service fonctionne :
 
-bash
+```bash
 curl http://127.0.0.1:8001/
 Résumé des commandes importantes
 Commande	Description
@@ -73,7 +79,7 @@ D'abord : ollama serve (dans un terminal)
 Ensuite : uvicorn main:app --reload --port 8001 (dans un autre terminal)
 
 Enfin : Faites vos requêtes à l'API sur http://127.0.0.1:8001
-
+```
 Structure du projet
 text
 ai-service/
