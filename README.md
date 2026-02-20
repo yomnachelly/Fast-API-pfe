@@ -98,12 +98,11 @@ Lancez ollama pull llama3:latest pour télécharger le modèle
 Port 8001 déjà utilisé
 Changez le port : uvicorn main:app --reload --port 8002
 
-text
+## conclusion 
 
-Les modifications principales :
 - ✅ Toutes les URLs FastAPI sont maintenant sur le **port 8001**
 - ✅ La commande de lancement inclut `--port 8001`
 - ✅ Le tableau récapitulatif est mis à jour
 - ✅ L'ordre de lancement mentionne le bon port
 
-Vous pouvez maintenant copier ce contenu dans votre README.md !
+
