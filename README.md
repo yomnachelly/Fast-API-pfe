@@ -19,9 +19,9 @@ cd Fast-API-pfe
 
 ```bash
 pip install fastapi uvicorn requests pydantic
-Lancer Ollama
-Démarrer le serveur Ollama
-bash
+```
+3.Lancer Ollama & Démarrer le serveur Ollama
+```bash
 ollama serve
  ```
 =>Le serveur sera accessible à l'adresse : http://127.0.0.1:11434/
@@ -66,13 +66,17 @@ Vérifier que le service fonctionne :
 
 ```bash
 curl http://127.0.0.1:8001/
-Résumé des commandes importantes
+```
+Résumé des commandes importantes:
 Commande	Description
-ollama serve	Démarre le serveur Ollama (http://127.0.0.1:11434)
+ollama serve	:Démarre le serveur Ollama (http://127.0.0.1:11434)
 ollama pull llama3:latest	Télécharge le modèle llama3
-uvicorn main:app --reload --port 8001	Lance le serveur FastAPI sur le port 8001
-curl http://127.0.0.1:11434/	Teste la connexion à Ollama
-curl http://127.0.0.1:8001/	Teste la connexion à FastAPI
+```bash
+uvicorn main:app --reload --port 8001	
+#Lance le serveur FastAPI sur le port 8001
+```
+curl http://127.0.0.1:11434/ :	Teste la connexion à Ollama
+curl http://127.0.0.1:8001/	:Teste la connexion à FastAPI
 Ordre de lancement
 D'abord : ollama serve (dans un terminal)
 
