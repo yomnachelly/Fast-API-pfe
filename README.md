@@ -1,112 +1,195 @@
-# FastAPI Chatbot Service
+# 🤖 Smart Book Hub — AI Chatbot Service
 
-Service AI chatbot utilisant FastAPI et Ollama avec le modèle llama3.
+Service de chatbot IA pour **Smart Book Hub**, une librairie en ligne. Construit avec **FastAPI** (Python) et intégré à une application **Laravel**, il utilise l'API **OpenAI** pour répondre aux questions des utilisateurs en français.
 
-## Prérequis
+---
 
-- Python 3.8+
-- [Ollama](https://ollama.ai/) installé sur votre machine
-- Le modèle llama3 téléchargé
+## 📁 Structure du projet
 
-## Installation
+```
+ai-service/
+├── main.py              # Serveur FastAPI principal
+├── requirements.txt     # Dépendances Python
+├── .env                 # Variables d'environnement (à créer)
+├── .gitignore
+└── README.md
+```
 
-1. **Cloner le dépôt**
+---
+
+## ⚙️ Prérequis
+
+| Outil | Version minimale |
+|-------|-----------------|
+| Python | 3.8+ |
+| pip | dernière version |
+| MySQL | 5.7+ (via Laragon / XAMPP) |
+| Clé API OpenAI | [platform.openai.com](https://platform.openai.com/api-keys) |
+
+---
+
+## 🚀 Installation
+
+### 1. Cloner le dépôt
+
 ```bash
 git clone https://github.com/yomnachelly/Fast-API-pfe.git
 cd Fast-API-pfe
 ```
-2.**Installer les dépendances Python**
+
+### 2. Installer les dépendances Python
 
 ```bash
-pip install fastapi uvicorn requests pydantic
+pip install -r requirements.txt
 ```
-3.Lancer Ollama & Démarrer le serveur Ollama
+
+Ou manuellement :
+
 ```bash
-ollama serve
- ```
-=>Le serveur sera accessible à l'adresse : http://127.0.0.1:11434/
-
-## Vérifier qu'Ollama fonctionne
-
-
-# Tester la connexion (dans un autre terminal)
-curl http://127.0.0.1:11434/api/generate
-Si le modèle llama3 n'est pas installé
-```bash
-ollama pull llama3:latest
+pip install fastapi uvicorn pydantic pymysql bcrypt PyJWT requests python-dotenv openai
 ```
-Lancer le service FastAPI
-Démarrer le serveur FastAPI
-```bash
-# Dans le dossier du projet (C:/ai-service)
-uvicorn main:app --reload --port 8001
+
+### 3. Configurer les variables d'environnement
+
+Créez un fichier `.env` à la racine du projet :
+
+```env
+# OpenAI
+OPENAI_API_KEY=sk-...votre-clé-ici...
+OPENAI_MODEL=gpt-4o-mini
+
+# JWT
+SECRET_KEY=votre-secret-jwt-très-long
+
+# Base de données Laravel (même DB)
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_USERNAME=root
+DB_PASSWORD=
+DB_DATABASE=bookhub2
 ```
-Le service sera disponible à : http://127.0.0.1:8001
 
-Vérifier que le service tourne
-Ouvrez http://127.0.0.1:8001 dans votre navigateur - vous devriez voir :
+---
 
-json
-{"message": "AI service is running!"}
-Utilisation de l'API
-Endpoint POST /ask
-Envoyez une question au chatbot :
+## ▶️ Lancement
+
+### Service FastAPI (IA)
 
 ```bash
-curl -X POST "http://127.0.0.1:8001/ask" \
-     -H "Content-Type: application/json" \
-     -d '{"prompt": "Quelle est la capitale de la France ?"}'
+uvicorn main:app --host 127.0.0.1 --port 8001 --reload
 ```
+
+Le service sera accessible à : **http://127.0.0.1:8001**
+
+### Vérifier que tout fonctionne
+
+```bash
+curl http://127.0.0.1:8001/health
+```
+
 Réponse attendue :
 
-json
-{"answer": "La capitale de la France est Paris."}
-Endpoint GET /
-Vérifier que le service fonctionne :
+```json
+{"api": "ok", "database": "ok", "openai": "ok"}
+```
+
+---
+
+## 🌐 Lancer le projet Laravel (SmartBookHub)
+
+### Prérequis supplémentaires
+
+- PHP 8.1+
+- Composer
+- Node.js & npm
+
+### Installation Laravel
 
 ```bash
-curl http://127.0.0.1:8001/
+composer install
+npm install
+cp .env.example .env
+php artisan key:generate
+php artisan migrate
 ```
-Résumé des commandes importantes:
-Commande	Description
-ollama serve	:Démarre le serveur Ollama (http://127.0.0.1:11434)
-ollama pull llama3:latest	Télécharge le modèle llama3
-```bash
-uvicorn main:app --reload --port 8001	
-#Lance le serveur FastAPI sur le port 8001
+
+### Lancement (3 terminaux séparés)
+
+| Terminal | Commande | URL |
+|----------|----------|-----|
+| 1 — Laravel | `php artisan serve` | http://127.0.0.1:8000 |
+| 2 — Vite (assets) | `npm run dev` | — |
+| 3 — FastAPI (IA) | `uvicorn main:app --host 127.0.0.1 --port 8001 --reload` | http://127.0.0.1:8001 |
+
+> ⚠️ **Ordre recommandé :** démarrez toujours FastAPI **avant** de vous connecter à Laravel, pour que le token IA soit généré correctement à la connexion.
+
+---
+
+## 📡 Endpoints API
+
+### `GET /`
+Vérifie que le service tourne.
+```json
+{"message": "AI service is running!"}
 ```
-curl http://127.0.0.1:11434/ :	Teste la connexion à Ollama
-curl http://127.0.0.1:8001/	:Teste la connexion à FastAPI
-Ordre de lancement
-D'abord : ollama serve (dans un terminal)
 
-Ensuite : uvicorn main:app --reload --port 8001 (dans un autre terminal)
-
-Enfin : Faites vos requêtes à l'API sur http://127.0.0.1:8001
+### `GET /health`
+Vérifie la connexion à la base de données et à OpenAI.
+```json
+{"api": "ok", "database": "ok", "openai": "ok"}
 ```
-Structure du projet
-text
-ai-service/
-├── main.py          # Code principal FastAPI
-├── README.md        # Ce fichier
-└── .gitignore       # Fichiers à ignorer par Git
-Dépannage
-Erreur "Connection refused" pour Ollama
-Vérifiez qu'Ollama est bien lancé avec ollama serve
 
-Vérifiez que http://127.0.0.1:11434 est accessible
+### `POST /auth/token`
+Authentifie un utilisateur Laravel et retourne un JWT.
+```json
+// Body
+{"email": "user@example.com", "password": "motdepasse"}
 
-Erreur "Model not found"
-Lancez ollama pull llama3:latest pour télécharger le modèle
+// Réponse
+{"access_token": "eyJ...", "token_type": "bearer", "role": "client"}
+```
 
-Port 8001 déjà utilisé
-Changez le port : uvicorn main:app --reload --port 8002
+### `POST /ask` 🔒 *(JWT requis)*
+Envoie une question à OpenAI et retourne la réponse.
+```json
+// Body
+{"prompt": "Quels livres recommandez-vous pour débuter en Python ?"}
 
-## conclusion 
+// Réponse
+{"answer": "Je vous recommande...", "asked_by": "user@example.com", "role": "client"}
+```
 
-- ✅ Toutes les URLs FastAPI sont maintenant sur le **port 8001**
-- ✅ La commande de lancement inclut `--port 8001`
-- ✅ Le tableau récapitulatif est mis à jour
-- ✅ L'ordre de lancement mentionne le bon port
+### `GET /admin/stats` 🔒 *(admin uniquement)*
+Endpoint réservé aux administrateurs.
 
+---
 
+## 🔐 Authentification
+
+Le service utilise des **JWT** (JSON Web Tokens) :
+
+1. À la connexion Laravel, un token est automatiquement généré via `/auth/token` et stocké en session
+2. Chaque requête vers `/ask` envoie ce token dans le header `Authorization: Bearer <token>`
+3. Le token expire après **60 minutes**
+
+---
+
+## 🛠️ Dépannage
+
+| Erreur | Cause probable | Solution |
+|--------|---------------|----------|
+| `Session expirée` | Token absent ou expiré | Se déconnecter et se reconnecter |
+| `missing OPENAI_API_KEY` | Clé non configurée | Vérifier le fichier `.env` |
+| `Database connection failed` | MySQL non démarré | Démarrer Laragon / XAMPP |
+| `Port 8001 déjà utilisé` | Processus en conflit | Changer le port : `--port 8002` |
+| `Erreur OpenAI` | Quota dépassé ou clé invalide | Vérifier la clé sur platform.openai.com |
+
+---
+
+## ✅ Récapitulatif
+
+- ✅ FastAPI sur le **port 8001**
+- ✅ Authentification JWT liée à la base de données Laravel
+- ✅ Intégration OpenAI (`gpt-4o-mini` par défaut)
+- ✅ Réponses en français, contextualisées pour Smart Book Hub
+- ✅ Toutes les URLs configurables via `.env`
