@@ -2,11 +2,11 @@ from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-import requests
 import json
 import jwt
 import datetime
 import os
+import re
 import pymysql
 import bcrypt
 import logging
@@ -30,7 +30,7 @@ OPENAI_MODEL   = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
 openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
-# ─── DATABASE CONFIG ──────────────────────────────────────────────────────────
+# DB CONFIG
 DB_CONFIG = {
     "host":        os.getenv("DB_HOST",     "127.0.0.1"),
     "port":        int(os.getenv("DB_PORT", "3306")),
@@ -64,7 +64,7 @@ def get_user_from_db(email: str) -> Optional[dict]:
     finally:
         conn.close()
 
-# ─── MODELS ───────────────────────────────────────────────────────────────────
+# MODELS
 class LoginRequest(BaseModel):
     email: str
     password: str
@@ -77,7 +77,7 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     role: str
 
-# ─── JWT HELPERS ──────────────────────────────────────────────────────────────
+# JWT HELPERS
 def create_token(email: str, role: str) -> str:
     payload = {
         "sub": email,
@@ -94,7 +94,7 @@ def decode_token(token: str) -> dict:
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-# ─── AUTH DEPENDENCIES ────────────────────────────────────────────────────────
+# AUTH DEPENDENCIES
 security = HTTPBearer()
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
@@ -110,7 +110,81 @@ def require_role(allowed_roles: list):
         return user
     return role_checker
 
-# ─── GLOBAL EXCEPTION HANDLER ────────────────────────────────────────────────
+# INTENT KEYWORDS (loaded from intent_config.json)
+with open("intent_config.json", "r", encoding="utf-8") as f:
+    _INTENT_KEYWORDS: dict = json.load(f)
+
+STATS_KEYWORDS  = _INTENT_KEYWORDS.get("stats", [])
+REPORT_KEYWORDS = _INTENT_KEYWORDS.get("report", [])
+
+# INTENT DETECTION
+def _normalize(text: str) -> str:
+    """Lowercase + strip accents => robust matching"""
+    return (
+        text.lower().strip()
+        .replace("é", "e").replace("è", "e").replace("ê", "e")
+        .replace("à", "a").replace("â", "a")
+        .replace("ù", "u").replace("û", "u")
+        .replace("î", "i").replace("ï", "i")
+        .replace("ô", "o").replace("ç", "c")
+    )
+
+def detect_intent(prompt: str) -> str:
+    """
+    Classify the user's message into one of three intents:
+      - 'stats'  -> user wants sales/analytics data (-> SQL queries)
+      - 'report' -> user wants to search reports/documents (-> ChromaDB)
+      - 'chat'   -> general bookstore conversation (-> LLM)
+
+    Strategy: keyword matching first (fast & free) -> then LLM fallback for ambiguous messages
+
+    => Returns: 'chat' | 'stats' | 'report'
+    """
+    normalized = _normalize(prompt)
+
+    # keyword-based detection
+    for kw in STATS_KEYWORDS:
+        if re.search(r'\b' + re.escape(_normalize(kw)) + r'\b', normalized):
+            logger.info(f"Intent detected via keyword (stats): '{kw}'")
+            return "stats"
+
+    for kw in REPORT_KEYWORDS:
+        if re.search(r'\b' + re.escape(_normalize(kw)) + r'\b', normalized):
+            logger.info(f"Intent detected via keyword (report): '{kw}'")
+            return "report"
+
+    # LLM fallback for ambiguous messages
+    if OPENAI_API_KEY:
+        try:
+            classification_prompt = (
+                "You are an intent classifier for a French online bookstore chatbot.\n"
+                "Classify the following user message into exactly one of these intents:\n"
+                "  - 'stats'  : the user is asking about sales figures, revenues, orders, "
+                "best-selling books, or any numerical/analytics data.\n"
+                "  - 'report' : the user is looking for a specific document, report, "
+                "book description, catalogue entry, or wants to search stored files.\n"
+                "  - 'chat'   : general conversation, product questions, recommendations, "
+                "or anything else.\n\n"
+                "Reply with ONLY one word: stats, report, or chat.\n\n"
+                f"User message: \"{prompt}\""
+            )
+            completion = openai_client.chat.completions.create(
+                model=OPENAI_MODEL,
+                messages=[{"role": "user", "content": classification_prompt}],
+                max_tokens=5,
+                temperature=0,
+            )
+            intent = completion.choices[0].message.content.strip().lower()
+            if intent in ("stats", "report", "chat"):
+                logger.info(f"Intent detected via LLM: '{intent}'")
+                return intent
+        except Exception as e:
+            logger.warning(f"LLM intent detection failed, defaulting to 'chat': {e}")
+
+    logger.info("Intent defaulting to: 'chat'")
+    return "chat"
+
+# GLOBAL EXCEPTION HANDLER
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request, exc):
     logger.error(f"Unhandled error on {request.url}: {type(exc).__name__}: {exc}")
@@ -119,7 +193,7 @@ async def unhandled_exception_handler(request, exc):
         content={"detail": f"{type(exc).__name__}: {str(exc)}"}
     )
 
-# ─── ROUTES ───────────────────────────────────────────────────────────────────
+# ROUTES
 @app.get("/")
 def home():
     return {"message": "AI service is running!"}
@@ -175,39 +249,49 @@ def ask_ai(
     if not OPENAI_API_KEY:
         raise HTTPException(status_code=500, detail="OpenAI API key not configured")
 
-    try:
-        completion = openai_client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "Tu es un assistant virtuel pour Smart Book Hub, une librairie en ligne. "
-                        "Tu aides les clients à trouver des livres, répondre à leurs questions sur les commandes, "
-                        "les catégories, et les services de la librairie. Réponds toujours en français."
-                    )
-                },
-                {
-                    "role": "user",
-                    "content": question.prompt
-                }
-            ],
-            max_tokens=1000,
-            temperature=0.7,
-        )
+    intent = detect_intent(question.prompt)
+    logger.info(f"Routing '{current_user['sub']}' prompt to intent: {intent}")
 
-        answer = completion.choices[0].message.content
-        logger.info(f"OpenAI response for {current_user['sub']}: {len(answer)} chars")
+    if intent == "stats":
+        answer = "[stats intent detected — SQL handler not yet implemented]"
 
-        return {
-            "answer": answer,
-            "asked_by": current_user["sub"],
-            "role": current_user["role"]
-        }
+    elif intent == "report":
+        answer = "[report intent detected — ChromaDB handler not yet implemented]"
 
-    except Exception as e:
-        logger.error(f"OpenAI error: {e}")
-        return {"answer": f"Erreur OpenAI: {str(e)}"}
+    else:
+        try:
+            completion = openai_client.chat.completions.create(
+                model=OPENAI_MODEL,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "Tu es un assistant virtuel pour Smart Book Hub, une librairie en ligne. "
+                            "Tu aides les clients à trouver des livres, répondre à leurs questions sur les commandes, "
+                            "les catégories, et les services de la librairie. Réponds toujours en français."
+                        )
+                    },
+                    {
+                        "role": "user",
+                        "content": question.prompt
+                    }
+                ],
+                max_tokens=1000,
+                temperature=0.7,
+            )
+            answer = completion.choices[0].message.content
+            logger.info(f"OpenAI response for {current_user['sub']}: {len(answer)} chars")
+
+        except Exception as e:
+            logger.error(f"OpenAI error: {e}")
+            return {"answer": f"Erreur OpenAI: {str(e)}"}
+
+    return {
+        "answer": answer,
+        "intent": intent,
+        "asked_by": current_user["sub"],
+        "role": current_user["role"]
+    }
 
 @app.get("/admin/stats")
 def admin_stats(current_user: dict = Depends(require_role(["admin"]))):

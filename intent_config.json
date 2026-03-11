@@ -1,0 +1,22 @@
+{
+  "stats": [
+    "statistique", "statistiques", "ventes", "vente", "chiffre", "chiffres",
+    "combien", "total", "revenus", "revenu", "commandes", "commande",
+    "meilleur", "meilleurs", "populaire", "populaires", "tendance", "tendances",
+    "vendu", "vendus", "bénéfice", "bénéfices", "classement", "analyse",
+    "performance", "performances", "résultat", "résultats", "rapport de vente",
+    "top livre", "top livres", "plus vendu", "plus vendus",
+    "statistic", "statistics", "sales", "revenue", "orders",
+    "best-selling", "bestselling", "best seller", "best sellers",
+    "how many", "how much", "analytics", "ranking",
+    "top book", "top books", "sold", "profit"
+  ],
+  "report": [
+    "rapport", "rapports", "document", "documents", "fichier", "fichiers",
+    "résumé", "résumés", "fiche", "fiches", "catalogue", "catalogues",
+    "description", "descriptions", "contenu", "contenus", "notice",
+    "recherche", "trouver un rapport", "chercher un document",
+    "report", "reports", "file", "files",
+    "summary", "summaries", "catalog", "find report", "search report", "search document"
+  ]
+}
