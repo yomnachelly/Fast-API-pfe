@@ -1,15 +1,24 @@
 {
-  "stats": [
-    "statistique", "statistiques", "ventes", "vente", "chiffre", "chiffres",
-    "combien", "total", "revenus", "revenu", "commandes", "commande",
-    "meilleur", "meilleurs", "populaire", "populaires", "tendance", "tendances",
-    "vendu", "vendus", "bénéfice", "bénéfices", "classement", "analyse",
-    "performance", "performances", "résultat", "résultats", "rapport de vente",
-    "top livre", "top livres", "plus vendu", "plus vendus",
-    "statistic", "statistics", "sales", "revenue", "orders",
+  "stats_admin": [
+    "chiffre d'affaires", "chiffres d'affaires", "revenus", "revenu", "bénéfice", "bénéfices",
+    "rapport de vente", "rapport des ventes", "analyse des ventes",
+    "commandes totales", "nombre de commandes", "total des commandes",
+    "top clients", "meilleur client", "meilleurs clients", "clients fideles",
+    "performance", "performances", "résultat", "résultats",
+    "classement des ventes", "ventes par categorie", "ventes par mois",
+    "revenus par categorie", "chiffre mensuel", "chiffres mensuels",
+    "auteur le plus vendu", "qui vend le plus",
+    "revenue", "revenues", "total sales", "total orders", "sales report",
+    "top clients", "best clients", "sales by category", "monthly sales",
+    "profit", "profits", "earnings", "turnover", "best author"
+  ],
+  "stats_public": [
+    "meilleur livre", "meilleurs livres", "livre populaire", "livres populaires",
+    "tendance", "tendances", "plus vendu", "plus vendus",
+    "top livre", "top livres", "le plus lu", "les plus lus",
+    "recommandation", "recommandations", "quoi lire", "que lire",
     "best-selling", "bestselling", "best seller", "best sellers",
-    "how many", "how much", "analytics", "ranking",
-    "top book", "top books", "sold", "profit"
+    "top book", "top books", "most popular", "trending", "recommended"
   ],
   "report": [
     "rapport", "rapports", "document", "documents", "fichier", "fichiers",
