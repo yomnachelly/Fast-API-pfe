@@ -63,6 +63,198 @@ def get_user_from_db(email: str) -> Optional[dict]:
         raise HTTPException(status_code=500, detail=f"Database query error: {str(e)}")
     finally:
         conn.close()
+#Total Sales       
+def get_total_sales():
+
+    conn = get_db_connection()
+
+    try:
+        with conn.cursor() as cursor:
+
+            cursor.execute("""
+                SELECT SUM(total) AS total_sales
+                FROM commandes
+                WHERE statut = 'validee'
+                AND YEAR(created_at) = 2026
+            """)
+
+            result = cursor.fetchone()
+
+            return result["total_sales"]
+
+    finally:
+        conn.close()
+#Books Sold
+def get_books_sold():
+
+    conn = get_db_connection()
+
+    try:
+        with conn.cursor() as cursor:
+
+            cursor.execute("""
+                SELECT SUM(cl.quantite) AS books_sold
+                FROM commande_livre cl
+                JOIN commandes c ON cl.commande_id = c.id
+                WHERE c.statut = 'validee'
+                AND YEAR(c.created_at) = 2026
+                """)
+
+            result = cursor.fetchone()
+
+            return result["books_sold"]
+
+    finally:
+        conn.close()       
+#Best-selling books
+def get_best_selling_books():
+
+    conn = get_db_connection()
+
+    try:
+        with conn.cursor() as cursor:
+
+            cursor.execute("""
+                SELECT l.titre, SUM(cl.quantite) AS total_sold
+                FROM commande_livre cl
+                JOIN livres l ON cl.livre_id = l.id_livre
+                JOIN commandes c ON cl.commande_id = c.id
+                WHERE c.statut = 'validee'
+                AND YEAR(c.created_at) = 2026
+                GROUP BY l.titre
+                ORDER BY total_sold DESC
+                LIMIT 5
+                """)
+
+            return cursor.fetchall()
+
+    finally:
+        conn.close()       
+#Nombre total de commandes
+def get_total_orders():
+
+    conn = get_db_connection()
+
+    try:
+        with conn.cursor() as cursor:
+
+            cursor.execute("""
+                SELECT COUNT(*) AS total_orders
+                FROM commandes
+                WHERE statut = 'validee'
+            """)
+
+            result = cursor.fetchone()
+
+            return result["total_orders"]
+
+    finally:
+        conn.close()
+#Livre le plus cher
+def get_most_expensive_book():
+
+    conn = get_db_connection()
+
+    try:
+        with conn.cursor() as cursor:
+
+            cursor.execute("""
+                SELECT titre, prix
+                FROM livres
+                ORDER BY prix DESC
+                LIMIT 1
+            """)
+
+            return cursor.fetchone()
+
+    finally:
+        conn.close()       
+#Auteur le plus vendu
+def get_best_author():
+
+    conn = get_db_connection()
+
+    try:
+        with conn.cursor() as cursor:
+
+            cursor.execute("""
+                SELECT l.auteur, SUM(cl.quantite) AS total_sold
+                FROM commande_livre cl
+                JOIN livres l ON cl.livre_id = l.id_livre
+                GROUP BY l.auteur
+                ORDER BY total_sold DESC
+                LIMIT 1
+            """)
+
+            return cursor.fetchone()
+
+    finally:
+        conn.close()        
+#Revenus par catégorie
+def get_sales_by_category():
+
+    conn = get_db_connection()
+
+    try:
+        with conn.cursor() as cursor:
+
+            cursor.execute("""
+                SELECT cat.nom_categ, SUM(cl.quantite * cl.prix) AS revenue
+                FROM commande_livre cl
+                JOIN livres l ON cl.livre_id = l.id_livre
+                JOIN livres_categories lc ON l.id_livre = lc.id_livre
+                JOIN categories cat ON lc.id_categ = cat.id_categ
+                GROUP BY cat.nom_categ
+                ORDER BY revenue DESC
+            """)
+
+            return cursor.fetchall()
+
+    finally:
+        conn.close()
+#Commandes par mois
+def get_orders_per_month():
+
+    conn = get_db_connection()
+
+    try:
+        with conn.cursor() as cursor:
+
+            cursor.execute("""
+                SELECT MONTH(created_at) AS month, COUNT(*) AS total_orders
+                FROM commandes
+                WHERE statut = 'validee'
+                GROUP BY MONTH(created_at)
+                ORDER BY month
+            """)
+
+            return cursor.fetchall()
+
+    finally:
+        conn.close()
+#clients qui achètent le plus
+def get_top_clients():
+
+    conn = get_db_connection()
+
+    try:
+        with conn.cursor() as cursor:
+
+            cursor.execute("""
+                SELECT u.name, COUNT(c.id) AS total_orders
+                FROM commandes c
+                JOIN users u ON c.user_id = u.id
+                WHERE c.statut = 'validee'
+                GROUP BY u.name
+                ORDER BY total_orders DESC
+                LIMIT 5
+            """)
+
+            return cursor.fetchall()
+
+    finally:
+        conn.close()       
+
 
 # MODELS
 class LoginRequest(BaseModel):
@@ -253,8 +445,22 @@ def ask_ai(
     logger.info(f"Routing '{current_user['sub']}' prompt to intent: {intent}")
 
     if intent == "stats":
-        answer = "[stats intent detected — SQL handler not yet implemented]"
 
+        total_sales = get_total_sales()
+        books_sold = get_books_sold()
+        best_books = get_best_selling_books()
+
+        answer = {
+        "total_sales": get_total_sales(),
+        "books_sold": get_books_sold(),
+        "best_selling_books": get_best_selling_books(),
+        "total_orders": get_total_orders(),
+        "best_author": get_best_author(),
+        "most_expensive_book": get_most_expensive_book(),
+        "sales_by_category": get_sales_by_category(),
+        "orders_per_month": get_orders_per_month(),
+        "top_clients": get_top_clients()
+         }
     elif intent == "report":
         answer = "[report intent detected — ChromaDB handler not yet implemented]"
 
