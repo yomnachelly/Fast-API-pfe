@@ -18,10 +18,25 @@ from dotenv import load_dotenv
 
 # LangChain imports
 from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
-from langchain_core.output_parsers import StrOutputParser
+from langchain.prompts.chat import ChatPromptTemplate
+from langchain.prompts import PromptTemplate
+from langchain.schema import BaseOutputParser  # <-- ajoute ceci
+import logging
+
+logging.basicConfig(level=logging.INFO)  # ou WARNING pour moins de détails
+logger = logging.getLogger("langchain")
+logger.setLevel(logging.WARNING)  # ignore les messages de debug
+
+# Création du parser personnalisé pour remplacer StrOutputParser
+class StrOutputParser(BaseOutputParser):
+    """Retourne simplement le texte généré par le LLM."""
+    def parse(self, text: str) -> str:
+        return text.strip()
+
+
 
 load_dotenv()
+logging.basicConfig(level=logging.INFO)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
