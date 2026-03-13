@@ -105,6 +105,7 @@ DB_DATABASE=bookhub2
 
 ```bash
 uvicorn main:app --host 127.0.0.1 --port 8001 --reload
+"C:\Users\HP\AppData\Local\Programs\Python\Python312\python.exe" -m uvicorn main:app --host 127.0.0.1 --port 8001 --reload
 ```
 
 The API will be live at **http://127.0.0.1:8001**  
