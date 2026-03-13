@@ -15,31 +15,18 @@ import bcrypt
 import logging
 from typing import Optional
 from dotenv import load_dotenv
-
-# LangChain imports
 from langchain_openai import ChatOpenAI
-from langchain.prompts.chat import ChatPromptTemplate
-from langchain.prompts import PromptTemplate
-from langchain.schema import BaseOutputParser  # <-- ajoute ceci
-import logging
-
-logging.basicConfig(level=logging.INFO)  # ou WARNING pour moins de détails
-logger = logging.getLogger("langchain")
-logger.setLevel(logging.WARNING)  # ignore les messages de debug
-
-# Création du parser personnalisé pour remplacer StrOutputParser
-class StrOutputParser(BaseOutputParser):
-    """Retourne simplement le texte généré par le LLM."""
-    def parse(self, text: str) -> str:
-        return text.strip()
-
-
+from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
 
 load_dotenv()
-logging.basicConfig(level=logging.INFO)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+logging.getLogger("langchain").setLevel(logging.WARNING)
+logging.getLogger("langchain_core").setLevel(logging.WARNING)
+logging.getLogger("langchain_openai").setLevel(logging.WARNING)
 
 app = FastAPI(title="AI Chatbot Service")
 
@@ -51,11 +38,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL   = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
 # LangChain LLM instances
-'''
-this will provide -> lower temprature + low tokens cost
-'''
-
-# One fast/cheap model for intent classification
+# One fast+cheap model for intent classification
 _llm_intent = ChatOpenAI(
     model=OPENAI_MODEL,
     temperature=0,
@@ -244,6 +227,25 @@ def get_total_orders():
     finally:
         conn.close()
 
+def get_best_author():
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT l.auteur, SUM(cl.quantite) AS total_sold
+                FROM commande_livre cl
+                JOIN livres l ON cl.livre_id = l.id_livre
+                JOIN commandes c ON cl.commande_id = c.id
+                WHERE c.statut = 'validee'
+                AND YEAR(c.created_at) = YEAR(NOW())
+                GROUP BY l.auteur
+                ORDER BY total_sold DESC
+                LIMIT 1
+            """)
+            return cursor.fetchone()
+    finally:
+        conn.close()
+
 def get_most_expensive_book():
     conn = get_db_connection()
     try:
@@ -258,33 +260,19 @@ def get_most_expensive_book():
     finally:
         conn.close()
 
-def get_best_author():
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute("""
-                SELECT l.auteur, SUM(cl.quantite) AS total_sold
-                FROM commande_livre cl
-                JOIN livres l ON cl.livre_id = l.id_livre
-                GROUP BY l.auteur
-                ORDER BY total_sold DESC
-                LIMIT 1
-            """)
-            return cursor.fetchone()
-    finally:
-        conn.close()
-
 def get_sales_by_category():
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
             cursor.execute("""
-                SELECT cat.nom_categ, SUM(cl.quantite * cl.prix) AS revenue
+                SELECT cat.nom_categ, SUM(cl.quantite * l.prix) AS revenue
                 FROM commande_livre cl
                 JOIN livres l ON cl.livre_id = l.id_livre
-                JOIN livres_categories lc ON l.id_livre = lc.id_livre
-                JOIN categories cat ON lc.id_categ = cat.id_categ
-                GROUP BY cat.nom_categ
+                JOIN categories cat ON l.categorie_id = cat.id_categ
+                JOIN commandes c ON cl.commande_id = c.id
+                WHERE c.statut = 'validee'
+                AND YEAR(c.created_at) = YEAR(NOW())
+                GROUP BY cat.id_categ, cat.nom_categ
                 ORDER BY revenue DESC
             """)
             return cursor.fetchall()
@@ -299,6 +287,7 @@ def get_orders_per_month():
                 SELECT MONTH(created_at) AS month, COUNT(*) AS total_orders
                 FROM commandes
                 WHERE statut = 'validee'
+                AND YEAR(created_at) = YEAR(NOW())
                 GROUP BY MONTH(created_at)
                 ORDER BY month
             """)
@@ -323,125 +312,59 @@ def get_top_clients():
     finally:
         conn.close()
 
-# MODELS
+# AUTH
 
 class LoginRequest(BaseModel):
     email: str
     password: str
-
-class Question(BaseModel):
-    prompt: str
 
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     role: str
 
-# JWT HELPERS
+class Question(BaseModel):
+    prompt: str
+
+security = HTTPBearer()
+
+STAFF_ONLY_INTENTS = {"stats_admin", "report"}
 
 def create_token(email: str, role: str) -> str:
     payload = {
         "sub":  email,
         "role": role,
-        "exp":  datetime.datetime.utcnow() + datetime.timedelta(minutes=TOKEN_EXPIRE_MINUTES)
+        "exp":  datetime.datetime.utcnow() + datetime.timedelta(minutes=TOKEN_EXPIRE_MINUTES),
+        "iat":  datetime.datetime.utcnow(),
     }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
-def decode_token(token: str) -> dict:
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
+    token = credentials.credentials
     try:
-        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return payload
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-# AUTH DEPENDENCIES
-
-security = HTTPBearer()
-
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
-    return decode_token(credentials.credentials)
-
 def require_role(allowed_roles: list):
-    def role_checker(user: dict = Depends(get_current_user)):
-        if user.get("role") not in allowed_roles:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied. Required roles: {}".format(allowed_roles)
-            )
-        return user
-    return role_checker
-
-# INTENT DETECTION
-
-with open("intent_config.json", "r", encoding="utf-8") as f:
-    _INTENT_KEYWORDS: dict = json.load(f)
-
-STATS_ADMIN_KEYWORDS  = _INTENT_KEYWORDS.get("stats_admin",  [])
-STATS_PUBLIC_KEYWORDS = _INTENT_KEYWORDS.get("stats_public", [])
-REPORT_KEYWORDS       = _INTENT_KEYWORDS.get("report",       [])
-
-# Intents that are restricted to staff roles
-STAFF_ONLY_INTENTS = {"stats_admin", "report"}
-
-def _normalize(text: str) -> str:
-    """Lowercase + strip accents for robust keyword matching."""
-    return (
-        text.lower().strip()
-        .replace("\u00e9", "e").replace("\u00e8", "e").replace("\u00ea", "e")
-        .replace("\u00e0", "a").replace("\u00e2", "a")
-        .replace("\u00f9", "u").replace("\u00fb", "u")
-        .replace("\u00ee", "i").replace("\u00ef", "i")
-        .replace("\u00f4", "o").replace("\u00e7", "c")
-    )
+    def checker(current_user: dict = Depends(get_current_user)):
+        if current_user.get("role") not in allowed_roles:
+            raise HTTPException(status_code=403, detail="Access forbidden")
+        return current_user
+    return checker
 
 def detect_intent(prompt: str) -> str:
-    """
-    Classify the user message into one of four intents:
-      - 'stats_admin'  -> sensitive business data (revenue, orders, clients…) (staff only)
-      - 'stats_public' -> public data (best-sellers, trending)      (all roles)
-      - 'report'       -> books / catalogue search                         (staff only)
-      - 'chat'         -> general conversation                                 (all roles)
-
-    Part 1 : keyword matching  (fast, no API cost)
-    Part 2 : LangChain chain   (handles ambiguous / mixed-language messages)
-    Part 3 : default chat      (fallback if LangChain fails)
-    """
-    normalized = _normalize(prompt)
-
-    # Admin/sensitive stats keywords — checked first (more specific)
-    for kw in STATS_ADMIN_KEYWORDS:
-        if re.search(r'\b' + re.escape(_normalize(kw)) + r'\b', normalized):
-            logger.info(f"[Intent] keyword match → stats_admin  ('{kw}')")
-            return "stats_admin"
-
-    # Public stats keywords
-    for kw in STATS_PUBLIC_KEYWORDS:
-        if re.search(r'\b' + re.escape(_normalize(kw)) + r'\b', normalized):
-            logger.info(f"[Intent] keyword match → stats_public ('{kw}')")
-            return "stats_public"
-
-    # Report keywords
-    for kw in REPORT_KEYWORDS:
-        if re.search(r'\b' + re.escape(_normalize(kw)) + r'\b', normalized):
-            logger.info(f"[Intent] keyword match → report ('{kw}')")
-            return "report"
-
-    # LangChain classification for ambiguous messages
-    if OPENAI_API_KEY:
-        try:
-            raw = _intent_chain.invoke({"prompt": prompt})
-            intent = raw.strip().lower().rstrip(".")
-            if intent in ("stats_admin", "stats_public", "report", "chat"):
-                logger.info(f"[Intent] LangChain chain → {intent}")
-                return intent
-            logger.warning(f"[Intent] LangChain returned unexpected value: '{raw}', defaulting to chat")
-        except Exception as e:
-            logger.warning(f"[Intent] LangChain chain failed: {e}")
-
-    # Default fallback
-    logger.info("[Intent] defaulting → chat")
-    return "chat"
+    try:
+        result = _intent_chain.invoke({"prompt": prompt})
+        intent = result.strip().lower()
+        valid_intents = {"stats_admin", "stats_public", "report", "chat"}
+        return intent if intent in valid_intents else "chat"
+    except Exception as e:
+        logger.error(f"Intent detection failed: {e}")
+        return "chat"
 
 # GLOBAL EXCEPTION HANDLER
 
@@ -520,9 +443,6 @@ def ask_ai(
     logger.info(f"[ask] user='{current_user['sub']}' role={user_role} intent={intent}")
 
     # ACCESS CONTROL
-    '''Block clients from sensitive intents. The check happens AFTER intent
-    detection so we never query the DB or call the stats chain for clients'''
-
     if user_role == "client" and intent in STAFF_ONLY_INTENTS:
         logger.warning(
             f"[ask] Access denied: client '{current_user['sub']}' "
@@ -638,7 +558,6 @@ def ask_ai(
 
     # REPORT INTENT (employe + admin)
     elif intent == "report":
-        # ChromaDB integration (phase 7)
         answer = "[report intent detected - ChromaDB handler not yet implemented]"
 
     # CHAT INTENT (all roles)
