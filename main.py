@@ -3,6 +3,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import json
+from decimal import Decimal
 
 # jwt tokens auth import
 import jwt
@@ -23,6 +24,22 @@ load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+def _safe_float(value, default=0):
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+def _safe_int(value, default=0):
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 logging.getLogger("langchain").setLevel(logging.WARNING)
 logging.getLogger("langchain_core").setLevel(logging.WARNING)
@@ -174,7 +191,7 @@ def get_total_sales():
                 AND YEAR(created_at) = YEAR(NOW())
             """)
             result = cursor.fetchone()
-            return result["total_sales"] or 0
+            return float(result["total_sales"] or 0)
     finally:
         conn.close()
 
@@ -190,7 +207,7 @@ def get_books_sold():
                 AND YEAR(c.created_at) = YEAR(NOW())
             """)
             result = cursor.fetchone()
-            return result["books_sold"] or 0
+            return int(result["books_sold"] or 0)
     finally:
         conn.close()
 
@@ -223,7 +240,7 @@ def get_total_orders():
                 WHERE statut = 'validee'
             """)
             result = cursor.fetchone()
-            return result["total_orders"] or 0
+            return int(result["total_orders"] or 0)
     finally:
         conn.close()
 
@@ -470,44 +487,88 @@ def ask_ai(
             9: "Septembre",10: "Octobre",  11: "Novembre", 12: "Decembre"
         }
 
-        total_sales      = get_total_sales()
-        total_orders     = get_total_orders()
-        books_sold       = get_books_sold()
-        best_books       = get_best_selling_books()
-        best_author      = get_best_author()
-        most_expensive   = get_most_expensive_book()
-        sales_by_cat     = get_sales_by_category()
-        orders_per_month = get_orders_per_month()
-        top_clients      = get_top_clients()
+        try:
+            total_sales = _safe_float(get_total_sales())
+        except Exception as e:
+            logger.error(f"[stats_admin] get_total_sales failed: {e}")
+            total_sales = 0.0
+
+        try:
+            total_orders = _safe_int(get_total_orders())
+        except Exception as e:
+            logger.error(f"[stats_admin] get_total_orders failed: {e}")
+            total_orders = 0
+
+        try:
+            books_sold = _safe_int(get_books_sold())
+        except Exception as e:
+            logger.error(f"[stats_admin] get_books_sold failed: {e}")
+            books_sold = 0
+
+        try:
+            best_books = get_best_selling_books() or []
+        except Exception as e:
+            logger.error(f"[stats_admin] get_best_selling_books failed: {e}")
+            best_books = []
+
+        try:
+            best_author = get_best_author()
+        except Exception as e:
+            logger.error(f"[stats_admin] get_best_author failed: {e}")
+            best_author = None
+
+        try:
+            most_expensive = get_most_expensive_book()
+        except Exception as e:
+            logger.error(f"[stats_admin] get_most_expensive_book failed: {e}")
+            most_expensive = None
+
+        try:
+            sales_by_cat = get_sales_by_category() or []
+        except Exception as e:
+            logger.error(f"[stats_admin] get_sales_by_category failed: {e}")
+            sales_by_cat = []
+
+        try:
+            orders_per_month = get_orders_per_month() or []
+        except Exception as e:
+            logger.error(f"[stats_admin] get_orders_per_month failed: {e}")
+            orders_per_month = []
+
+        try:
+            top_clients = get_top_clients() or []
+        except Exception as e:
+            logger.error(f"[stats_admin] get_top_clients failed: {e}")
+            top_clients = []
 
         best_books_txt = "\n".join(
-            "  {}. {} - {} exemplaire(s)".format(i + 1, b["titre"], b["total_sold"])
+            "  {}. {} - {} exemplaire(s)".format(i + 1, b["titre"], _safe_int(b["total_sold"]))
             for i, b in enumerate(best_books)
         ) if best_books else "  Aucune donnee"
 
         sales_cat_txt = "\n".join(
-            "  - {} : {:.2f} TND".format(c["nom_categ"], c["revenue"])
+            "  - {} : {:.2f} TND".format(c["nom_categ"], _safe_float(c["revenue"]))
             for c in sales_by_cat
         ) if sales_by_cat else "  Aucune donnee"
 
         orders_month_txt = "\n".join(
             "  - {} : {} commande(s)".format(
-                month_names.get(m["month"], str(m["month"])), m["total_orders"]
+                month_names.get(_safe_int(m["month"]), str(m["month"])), _safe_int(m["total_orders"])
             )
             for m in orders_per_month
         ) if orders_per_month else "  Aucune donnee"
 
         top_clients_txt = "\n".join(
-            "  - {} : {} commande(s)".format(c["name"], c["total_orders"])
+            "  - {} : {} commande(s)".format(c["name"], _safe_int(c["total_orders"]))
             for c in top_clients
         ) if top_clients else "  Aucune donnee"
 
         best_author_txt = (
-            "{} ({} exemplaires)".format(best_author["auteur"], best_author["total_sold"])
+            "{} ({} exemplaires)".format(best_author["auteur"], _safe_int(best_author["total_sold"]))
             if best_author else "N/A"
         )
         most_expensive_txt = (
-            "{} - {} TND".format(most_expensive["titre"], most_expensive["prix"])
+            "{} - {} TND".format(most_expensive["titre"], _safe_float(most_expensive["prix"]))
             if most_expensive else "N/A"
         )
 
