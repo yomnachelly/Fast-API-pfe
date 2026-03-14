@@ -16,3 +16,7 @@ langchain-openai>=0.2.0
 
 # OpenAI
 openai>=1.50.0
+
+# ChromaDB + LangChain vector store (étapes 6-12)
+chromadb>=0.5.17
+langchain-chroma>=0.1.4

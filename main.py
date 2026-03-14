@@ -19,7 +19,10 @@ from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
+from langchain_chroma import Chroma
+from langchain_openai import OpenAIEmbeddings
 
+from langchain_core.documents import Document
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
@@ -142,7 +145,105 @@ _chat_prompt = ChatPromptTemplate.from_messages([
     ("human", "{question}"),
 ])
 _chat_chain = _chat_prompt | _llm_chat | StrOutputParser()
+# ===================== ChromaDB collections(reports, books) =====================
+embeddings = OpenAIEmbeddings(
+    model="text-embedding-3-small",
+    api_key=OPENAI_API_KEY
+)
 
+CHROMA_PERSIST_DIR = "./chroma_db"
+
+reports_vectorstore = None
+books_vectorstore = None
+
+def init_chroma():
+    """Création des collections ChromaDB """
+    global reports_vectorstore, books_vectorstore
+    
+    reports_vectorstore = Chroma(
+        collection_name="reports",
+        embedding_function=embeddings,
+        persist_directory=CHROMA_PERSIST_DIR,
+    )
+    books_vectorstore = Chroma(
+        collection_name="books",
+        embedding_function=embeddings,
+        persist_directory=CHROMA_PERSIST_DIR,
+    )
+    logger.info("Collections ChromaDB créées")
+
+def load_books_to_chroma():
+    """Charge les livres de la DB dans ChromaDB"""
+    global books_vectorstore
+    if books_vectorstore is None:
+        init_chroma()
+    
+    # Évite de recharger plusieurs fois
+    if len(books_vectorstore.get()["ids"]) > 0:
+        return
+    
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT id_livre, titre, auteur, prix FROM livres LIMIT 100")
+            books = cursor.fetchall()
+            
+            docs = []
+            for b in books:
+                text = f"Livre : {b['titre']}\nAuteur : {b.get('auteur', 'Inconnu')}\nPrix : {b.get('prix', 0)} TND"
+                docs.append(Document(page_content=text, metadata={"book_id": b["id_livre"], "titre": b["titre"]}))
+            
+            if docs:
+                books_vectorstore.add_documents(docs)
+                logger.info(f"{len(docs)} livres ajoutés dans ChromaDB")
+    finally:
+        conn.close()
+
+def add_report(text: str, title: str, metadata: dict = None):
+    """Ajoute un rapport dans ChromaDB """
+    global reports_vectorstore
+    if reports_vectorstore is None:
+        init_chroma()
+    meta = metadata or {}
+    meta["title"] = title
+    doc = Document(page_content=text, metadata=meta)
+    reports_vectorstore.add_documents([doc])
+    logger.info(f"Rapport '{title}' ajouté")
+
+def semantic_search_reports(query: str, k: int = 4):
+    """Recherche sémantique dans les rapports """
+    global reports_vectorstore
+    if reports_vectorstore is None:
+        init_chroma()
+    return reports_vectorstore.similarity_search(query, k=k)
+
+def get_report_context(query: str, k: int = 4):
+    """Retourne les résultats ChromaDB comme contexte pour le LLM """
+    docs = semantic_search_reports(query, k)
+    if not docs:
+        return "Aucun rapport trouvé dans la base."
+    
+    parts = []
+    for i, doc in enumerate(docs, 1):
+        title = doc.metadata.get("title", "Sans titre")
+        parts.append(f"**Rapport {i} — {title}**\n{doc.page_content}")
+    return "\n\n" + "="*50 + "\n\n".join(parts)
+
+# Chain pour les rapports (intent "report")
+_report_prompt = ChatPromptTemplate.from_messages([
+    (
+        "system",
+        "Tu es un assistant spécialisé dans les rapports internes de Smart Book Hub. "
+        "Réponds toujours en français, de façon professionnelle et précise. "
+        "Utilise UNIQUEMENT les rapports fournis. Si l'info n'est pas là, dis-le clairement."
+    ),
+    (
+        "human",
+        "Rapports trouvés :\n{report_context}\n\nQuestion : {question}"
+    ),
+])
+_report_chain = _report_prompt | _llm_chat | StrOutputParser()
+# ===================== FIN CHROMADB =====================
 # DB CONFIG
 
 DB_CONFIG = {
@@ -617,9 +718,19 @@ def ask_ai(
             logger.error(f"[ask] stats_public LangChain error: {e}")
             answer = "Voici les livres les plus populaires :\n\n" + books_context
 
-    # REPORT INTENT (employe + admin)
+       # REPORT INTENT (employe + admin) — CHROMADB ACTIVÉ
     elif intent == "report":
-        answer = "[report intent detected - ChromaDB handler not yet implemented]"
+        report_context = get_report_context(question.prompt)
+        
+        try:
+            answer = _report_chain.invoke({
+                "report_context": report_context,
+                "question":      question.prompt,
+            })
+            logger.info(f"[ask] report answer: {len(answer)} chars")
+        except Exception as e:
+            logger.error(f"[ask] report LangChain error: {e}")
+            answer = "Voici les rapports trouvés :\n\n" + report_context
 
     # CHAT INTENT (all roles)
     else:
@@ -639,8 +750,30 @@ def ask_ai(
 
 
 @app.get("/admin/stats")
+
 def admin_stats(current_user: dict = Depends(require_role(["admin"]))):
     return {
         "message":     "Admin stats endpoint",
         "accessed_by": current_user["sub"],
     }
+# ===================== INITIALISATION CHROMADB AU DÉMARRAGE =====================
+init_chroma()
+
+# Ajout de 2 rapports exemples (pour tester tout de suite)
+if len(reports_vectorstore.get()["ids"]) == 0:
+    sample_docs = [
+        Document(
+            page_content="Rapport annuel 2025 : Le chiffre d'affaires a atteint 125 000 TND (+18% vs 2024). Les catégories Fiction et Romance représentent 62% des ventes.",
+            metadata={"title": "Rapport Annuel 2025", "date": "2025"}
+        ),
+        Document(
+            page_content="Rapport Q1 2026 : Meilleures ventes : 'Le Petit Prince' (245 ex) et 'Harry Potter'. Hausse de 30% sur les livres pour enfants.",
+            metadata={"title": "Rapport Trimestriel Q1 2026", "date": "2026"}
+        )
+    ]
+    reports_vectorstore.add_documents(sample_docs)
+    logger.info("✅ 2 rapports exemples ajoutés")
+
+load_books_to_chroma()
+
+logger.info("🚀 ChromaDB prêt (rapports + livres)")
